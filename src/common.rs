@@ -10,13 +10,15 @@ use crate::error::{Error, Result};
 
 pub const MIN_BIT_LENGTH: usize = 128;
 
+/// 40 rounds should be sufficient for miller rabin https://security.stackexchange.com/a/4546
+const NUM_MR_CHECKS: usize = 40;
+
 /// Create a new prime number with size `bit_length` sourced
 /// from an already-initialized `Rng`
 pub fn gen_prime<R: Rng + ?Sized>(bit_length: usize, rng: &mut R) -> Result {
     if bit_length < MIN_BIT_LENGTH {
         Err(Error::BitLength(bit_length))
     } else {
-        let checks = required_checks(bit_length);
         let mut candidate;
 
         loop {
@@ -25,7 +27,7 @@ pub fn gen_prime<R: Rng + ?Sized>(bit_length: usize, rng: &mut R) -> Result {
             //Set the top two bits and lowest bit
             candidate |= BigUint::one();
 
-            if _is_prime(&candidate, checks, true) && lucas(&candidate) {
+            if _is_prime(&candidate, NUM_MR_CHECKS, true) && lucas(&candidate) {
                 return Ok(candidate);
             }
         }
@@ -41,12 +43,11 @@ pub fn gen_safe_prime<R: Rng + ?Sized>(bit_length: usize, rng: &mut R) -> Result
         Err(Error::BitLength(bit_length))
     } else {
         let mut candidate: BigUint;
-        let checks = required_checks(bit_length) - 5;
 
         loop {
             candidate = gen_prime(bit_length, rng)?;
 
-            if _is_safe_prime(&candidate, checks, true) && lucas(&candidate) {
+            if _is_safe_prime(&candidate, NUM_MR_CHECKS, true) && lucas(&candidate) {
                 break;
             }
 
@@ -54,7 +55,7 @@ pub fn gen_safe_prime<R: Rng + ?Sized>(bit_length: usize, rng: &mut R) -> Result
             candidate += 1_usize;
 
             if (&candidate % &three) == two
-                && _is_prime(&candidate, checks, false)
+                && _is_prime(&candidate, NUM_MR_CHECKS, false)
                 && lucas(&candidate)
             {
                 break;
@@ -67,17 +68,17 @@ pub fn gen_safe_prime<R: Rng + ?Sized>(bit_length: usize, rng: &mut R) -> Result
 
 /// Checks if number is a prime using the Baillie-PSW test
 pub fn is_prime_baillie_psw(candidate: &BigUint) -> bool {
-    _is_prime(candidate, required_checks(candidate.bits()), true) && lucas(candidate)
+    _is_prime(candidate, NUM_MR_CHECKS, true) && lucas(candidate)
 }
 
 /// Checks if number is a safe prime using the Baillie-PSW test
 pub fn is_safe_prime_baillie_psw(candidate: &BigUint) -> bool {
-    _is_safe_prime(candidate, required_checks(candidate.bits()), true) && lucas(&candidate)
+    _is_safe_prime(candidate, NUM_MR_CHECKS, true) && lucas(&candidate)
 }
 
 /// Checks if number is a safe prime
 pub fn is_safe_prime(candidate: &BigUint) -> bool {
-    _is_safe_prime(candidate, required_checks(candidate.bits()), false)
+    _is_safe_prime(candidate, NUM_MR_CHECKS, false)
 }
 
 /// Common function for is_safe_prime
@@ -102,7 +103,7 @@ fn _is_safe_prime(candidate: &BigUint, checks: usize, force2: bool) -> bool {
 /// 3- Perform log2(bitlength) + 5 rounds of Miller-Rabin
 ///    depending on the number of bits
 pub fn is_prime(candidate: &BigUint) -> bool {
-    _is_prime(candidate, required_checks(candidate.bits()), false)
+    _is_prime(candidate, NUM_MR_CHECKS, false)
 }
 
 /// Common function for is_prime
@@ -132,11 +133,6 @@ fn _is_prime(candidate: &BigUint, checks: usize, force2: bool) -> bool {
     }
 
     true
-}
-
-/// Minimum checks to be considered okay
-fn required_checks(bits: usize) -> usize {
-    ((bits as f64).log2() as usize) + 5
 }
 
 /// Perform Fermat's little theorem on the candidate to determine probable
